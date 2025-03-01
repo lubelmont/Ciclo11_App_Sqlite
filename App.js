@@ -1,59 +1,89 @@
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View } from 'react-native';
-import * as SQLite from 'expo-sqlite';
+import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 
 export default function App() {
 
-  
-  
-  const [db, setDb] = useState(null);
-  
-  useEffect(() => {
-    
-    //setDb(basedatos);
-    const db = SQLite.openDatabaseAsync('usuarios.db');
-    db.execAsync(`create table if not exists users (name TEXT)`)
-    .then(() => {
-      console.log('Table created successfully');
-    })
-    .catch(error => {
-      console.error('Error creating table', error);
-    });
-
-
-
-/*
-
-    basedatos.transaction(tx => {
-      tx.executeSql(
-        'create table if not exists users (name TEXT)',
-        [],
-        () => { console.log('Table created successfully'); },
-        (_, error) => { console.error('Error creating table', error); }
-      );
-    });
-    */
-/*
-    db.transaction(tx => {
-      tx.executeSql('SELECT * FROM users', null,
-        (txObj, resultSet)=> {
-          console.log('resultSet', resultSet)
-        }
-      )
-    })
-*/
-
-  }, []);
-
-
   return (
     <View style={styles.container}>
-      <Text>Usuarios</Text>
+      <SQLiteProvider databaseName="test.db" onInit={migrateDbIfNeeded}>
+              <Header />
+              <Content />
+            </SQLiteProvider>
       <StatusBar style="auto" />
     </View>
   );
 }
+
+export function Header() {
+  const db = useSQLiteContext();
+  const [version, setVersion] = useState('');
+  useEffect(() => {
+    console.log("-------");
+    async function setup() {
+      const result = await db.getFirstAsync(
+        'SELECT sqlite_version()'
+      );
+      setVersion(result['sqlite_version()']);
+    }
+    setup();
+  }, []);
+  return (
+    <View style={styles.headerContainer}>
+      <Text style={styles.headerText}>SQLite version: {version}</Text>
+    </View>
+  );
+}
+
+export function Content() {
+  const db = useSQLiteContext();
+  const [todos, setTodos] = useState([]);
+
+  useEffect(() => {
+    async function setup() {
+      const result = await db.getAllAsync('SELECT * FROM todos');
+      setTodos(result);
+    }
+    setup();
+  }, []);
+
+  return (
+    <View style={styles.contentContainer}>
+      {todos.map((todo, index) => (
+        <View style={styles.todoItemContainer} key={index}>
+          <Text>{`${todo.intValue} - ${todo.value}`}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+
+async function migrateDbIfNeeded(db) {
+  const DATABASE_VERSION = 1;
+  let { user_version: currentDbVersion } = await db.getFirstAsync(
+    'PRAGMA user_version'
+  );
+  if (currentDbVersion >= DATABASE_VERSION) {
+    return;
+  }
+  if (currentDbVersion === 0) {
+    await db.execAsync(`
+PRAGMA journal_mode = 'wal';
+CREATE TABLE todos (id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL, intValue INTEGER);
+`);
+    await db.runAsync('INSERT INTO todos (value, intValue) VALUES (?, ?)', 'hello', 1);
+    await db.runAsync('INSERT INTO todos (value, intValue) VALUES (?, ?)', 'world', 2);
+    currentDbVersion = 1;
+  }
+  // if (currentDbVersion === 1) {
+  //   Add more migrations
+  // }
+  await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
+}
+
+
 
 const styles = StyleSheet.create({
   container: {
